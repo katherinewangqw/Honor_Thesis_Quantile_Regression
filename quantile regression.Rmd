@@ -1,0 +1,278 @@
+---
+title: \bf\textsc{\large Quantile Regression Tutorial} 
+subtitle: \textsc{\today}
+author: Katherine Wang
+documentclass: article
+fontsize: 10pt 
+geometry: margin=0.45in 
+output: pdf_document
+header-includes:
+  - \usepackage{palatino}
+  - \usepackage[singlespacing]{setspace}
+  - \usepackage{hyperref}
+  - \usepackage{amsthm}
+  - \usepackage{enumitem}
+  - \usepackage{subfigure}
+  - \usepackage{float}
+  - \newtheoremstyle{sol}{3pt}{2pt}{}{}{\bfseries}{.}{.5em}{}
+  - \theoremstyle{sol}
+  - \newtheorem*{sol}{Suggested Solution}
+  - \newcommand{\benum}{\begin{enumerate}[label=(\alph*)]}
+  - \newcommand{\eenum}{\end{enumerate}}
+  - \newcommand{\bitem}{\begin{itemize}}
+  - \newcommand{\eitem}{\end{itemize}}
+---
+
+```{r setup, echo=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, prompt=FALSE, message=FALSE,comment=NA,warning=FALSE,collapse=TRUE , fig.align="center")
+```
+
+```{r library, echo=FALSE}
+if(!require(quantreg)){
+    install.packages("quantreg")
+    library(quantreg)
+}
+
+if(!require(tripack)){
+    install.packages("tripack")
+    library(tripack)
+}
+
+if(!require(akima)){
+    install.packages("akima")
+    library(akima)
+}
+```
+
+```{r}
+(zt = (0.49546*0)+(-0.7364016*-0.01)+(0.1943648*.01)+(0.4341324*.01)+(-0.4414887*.03)+(0.4339645*0)+(-0.2706477*-.06)+(-0.0190025*-.93)+(-0.2692531*.03)+(-0.0509135*0)+(-0.3649059*0)+(0.0336885*-.28) +(-0.0860354*-.1579711)+(0.6428335*-.0263393)+(0.0611821*-.1032249)+(-0.5643571*-.03164135)+(0.2242662*-.03293138)+(-0.3295046*.14699239)+(-0.0979268*-.16577071)+(0.2817346*-.95898831)+(0.4003618*-.02449138)+(0.2340595*-.04733017)+(0.628051*.19490619))
+yt = .09
+(yt1 = zt + yt)
+```
+
+
+\section{Introduction to `rq`}
+
+```{r}
+data(engel)
+attach(engel)
+head(engel)
+```
+
+```{r}
+fit1 <- rq(foodexp ~ income, tau = .5, data = engel)
+fit1
+summary(fit1)
+```
+
+Extract the residuals or the coefficients of the fitted relationship
+
+```{r}
+r1 <- resid(fit1)
+c1 <- coef(fit1)
+```
+
+\section{Formal Inference}
+
+```{r}
+summary(fit1,se = "nid")
+```
+
+
+```{r}
+xx <- income - mean(income)
+fit1 <- summary(rq(foodexp~xx,tau=2:98/100, data=engel))
+fit2 <- summary(rq(foodexp~xx,tau=c(.05, .25, .5, .75, .95), data=engel))
+```
+
+```{r}
+# generate a pdf 
+pdf("engelcoef.pdf",width=6.5,height=3.5)
+plot(fit1,mfrow = c(1,2))
+dev.off()
+```
+
+```{r}
+latex(fit2, caption="Engel's Law", transpose=TRUE)
+```
+
+```{r}
+plot(income,foodexp,cex=.25,type="n",xlab="Household Income", ylab="Food Expenditure")
+points(income,foodexp,cex=.5,col="blue")
+abline(rq(foodexp~income,tau=.5),col="blue")
+abline(lm(foodexp~income),lty=2,col="red")#the dreaded ols line
+taus <- c(.05,.1,.25,.75,.90,.95)
+for( i in 1:length(taus)){
+  abline(rq(foodexp~income,tau=taus[i]),col="gray")}
+```
+
+```{r}
+attach(engel)
+z <- rq(foodexp~income,tau=-1)
+```
+
+
+\section{More on Testing}
+
+```{r}
+fit1 <- rq(foodexp~income,tau=.25)
+fit2 <- rq(foodexp~income,tau=.50)
+fit3 <- rq(foodexp~income,tau=.75)
+anova(fit1, fit2, fit3)
+```
+
+```{r}
+x.poor <- quantile(income,.1) #Poor is defined as at the .1 quantile of the sample distn
+x.rich <- quantile(income,.9) #Rich is defined as at the .9 quantile of the sample distn
+ps <- z$sol[1,] #the first row
+qs.poor <- c(c(1,x.poor)%*%z$sol[4:5,])
+qs.rich <- c(c(1,x.rich)%*%z$sol[4:5,])
+#now plot the two quantile functions to compare
+par(mfrow = c(1,2))
+plot(c(ps,ps),c(qs.poor,qs.rich), type="n",
+     xlab = expression(tau), ylab = "quantile")
+plot(stepfun(ps,c(qs.poor[1],qs.poor)), do.points=FALSE, add=TRUE)
+plot(stepfun(ps,c(qs.poor[1],qs.rich)), do.points=FALSE, add=TRUE,
+     col.hor = "gray", col.vert = "gray")
+## now plot associated conditional density estimates
+## weights from ps (process)
+ps.wts <- (c(0,diff(ps)) + c(diff(ps),0))/2
+ap <- akj(qs.poor, z=qs.poor, p = ps.wts)
+ar <- akj(qs.rich, z=qs.rich, p = ps.wts)
+plot(c(qs.poor,qs.rich),c(ap$dens,ar$dens),type="n",
+     xlab= "Food Expenditure", ylab= "Density")
+lines(qs.rich, ar$dens, col="gray")
+lines(qs.poor, ap$dens, col="black")
+legend("topright", c("poor","rich"), lty = c(1,1), col=c("black","gray"))
+```
+
+```{r}
+plot(income,foodexp,log="xy",xlab="Household Income", ylab="Food Expenditure")
+taus <- c(.05,.1,.25,.75,.90,.95)
+abline(rq(log10(foodexp)~log10(income),tau=.5),col="blue")
+abline(lm(log10(foodexp)~log10(income)),lty = 3,col="red")
+for( i in 1:length(taus)){
+  abline(rq(log10(foodexp)~log10(income),tau=taus[i]),col="gray")}
+```
+
+## Nonlinear Quantile Regression
+
+```{r}
+n<-200
+df<-8
+delta <- 8
+set.seed(4003)
+x <- sort(rt(n,df))
+u <- runif(n)
+v <- -log(1-(1-exp(-delta))/(1+exp(-delta*pt(x,df))*((1/u)-1)))/delta
+y <- qt(v,df)
+```
+
+## Nonparametric Quantile Regression
+
+```{r}
+"lprq" <-
+  function(x, y, h, m=50 , tau=.5){
+    xx <- seq(min(x),max(x),length=m)
+    fv<-xx
+    dv<-xx
+    for(i in 1:length(xx)) {
+      z <- x - xx[i]
+      wx <- dnorm(z/h)
+      r <- rq(y~z, weights=wx,tau=tau,ci=FALSE)
+      fv[i] <- r$coef[1.]
+      dv[i] <- r$coef[2.]
+    }
+    list(xx = xx, fv = fv, dv = dv)
+  }
+```
+
+
+```{r}
+plot(x,y,col="blue",cex = .25)
+us <- c(.25,.5,.75)
+for(i in 1:length(us)){
+        u <- us[i]
+        v <- -log(1-(1-exp(-delta))/
+                (1+exp(-delta*pt(x,df))*((1/u)-1)))/delta
+        lines(x,qt(v,df))
+}
+
+Dat <- NULL
+Dat$x <- x
+Dat$y <- y
+deltas <- matrix(0,3,length(us))
+FrankModel <- function(x,delta,mu,sigma,df,tau){
+  z <- qt(-log(1-(1-exp(-delta))/(1+exp(-delta*pt(x,df))*((1/tau)-1)))/delta,df)
+  mu + sigma*z
+}
+for(i in 1:length(us)){
+  tau = us[i]
+  fit <- nlrq(y~FrankModel(x,delta,mu,sigma,df=8,tau=tau),
+              data=Dat,tau= tau,
+              start=list(delta=5,mu = 0, sigma = 1),trace=TRUE)
+  lines(x, predict(fit, newdata=x), lty=2, col="green")
+  deltas[i,] <- coef(fit)
+}
+```
+
+
+```{r}
+library(MASS)
+data(mcycle)
+attach(mcycle)
+plot(times,accel,xlab = "milliseconds", ylab = "acceleration")
+hs <- c(1,2,3,4)
+for(i in hs){
+  h = hs[i]
+  fit <- lprq(times,accel,h=h,tau=.5)
+  lines(fit$xx,fit$fv,lty=i)
+  }
+legend(45,-70,c("h=1","h=2","h=3","h=4"),lty=1:length(hs))
+```
+
+```{r}
+library(splines)
+plot(times,accel,xlab = "milliseconds", ylab = "acceleration",type="n")
+points(times,accel,cex = .75)
+X <- model.matrix(accel ~ bs(times, df=15))
+for(tau in 1:3/4){
+  fit <- rq(accel ~ bs(times, df=15), tau=tau, data=mcycle)
+  accel.fit <- X %*% fit$coef
+  lines(times,accel.fit)
+  }
+```
+
+
+```{r}
+data(Mammals)
+attach(Mammals)
+x <- log(weight)
+y <- log(speed)
+plot(x,y, xlab="Weight in log(Kg)", ylab="Speed in log(Km/hour)",type="n")
+points(x[hoppers],y[hoppers],pch = "h", col="red")
+points(x[specials],y[specials],pch = "s", col="blue")
+others <- (!hoppers & !specials)
+points(x[others],y[others], col="black",cex = .75)
+fit <- rqss(y ~ qss(x, lambda = 1),tau = .9)
+plot(fit, add = TRUE)
+```
+
+```{r}
+data(CobarOre)
+fit <- rqss(z ~ qss(cbind(x,y), lambda = .01, ndum=100),data = CobarOre)
+plot(fit, axes = FALSE, xlab = "", ylab = "")
+rm(list=ls())
+```
+
+
+
+
+
+
+
+
+
+
+
