@@ -1,0 +1,206 @@
+---
+title: \bf\textsc{\large QR(week1)} 
+subtitle: \textsc{\today}
+documentclass: article
+fontsize: 10pt 
+geometry: margin=0.45in 
+output: pdf_document
+header-includes:
+  - \usepackage{palatino}
+  - \usepackage[singlespacing]{setspace}
+  - \usepackage{hyperref}
+  - \usepackage{amsthm}
+  - \usepackage{amsmath}
+  - \usepackage{enumitem}
+  - \usepackage{subfigure}
+  - \usepackage{float}
+  - \newtheoremstyle{sol}{3pt}{2pt}{}{}{\bfseries}{.}{.5em}{}
+  - \theoremstyle{sol}
+  - \newtheorem*{sol}{Suggested Solution}
+  - \newcommand{\benum}{\begin{enumerate}[label=(\alph*)]}
+  - \newcommand{\eenum}{\end{enumerate}}
+  - \newcommand{\bitem}{\begin{itemize}}
+  - \newcommand{\eitem}{\end{itemize}}
+---
+
+```{r setup, echo=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, prompt=FALSE, message=FALSE,comment=NA,warning=FALSE,collapse=TRUE , fig.align="center")
+```
+
+```{r library, echo=FALSE}
+if(!require(ggplot2)){
+    install.packages("ggplot2")
+    library(ggplot2)
+}
+if(!require(quantreg)){
+    install.packages("quantreg")
+    library(quantreg)
+}
+```
+
+\section{Part I: Simulation}
+\subsection{1. Generate Dataset}
+
+Following the data generating process:
+
+\begin{align*}
+&y_i = (1+\beta x_i)(u_i+3)\\
+&u|x \sim \chi^2_3\\
+&x \sim \chi^2_6
+\end{align*}
+
+Here, I choose $\beta = 1$ and set seed(123) to fix the data.
+
+```{r}
+# test with a seed
+set.seed(123)
+u = data.frame(u=rchisq(1:300, df=3))
+x = data.frame(x=rchisq(1:300, df=6))
+beta = 1
+y = data.frame(y = (1+beta*x)*(u+3))
+colnames(y) <- c('y')
+df <- cbind(x,y)
+```
+
+\subsection{2. Plot}
+
+Mimicking the code for plotting in the `rq` tutorial, the graph below plots $Q_{y|x}(\tau)$ for $\tau \in (.05,.1,.25,.75,.90,.95)$
+the graph below proved heteroskedasticity. ($\beta = 1, N = 300$)
+
+```{r}
+plot(df, cex=.6, col="blue")
+taus <- c(.05,.1,.25,.75,.90,.95)
+for( i in 1:length(taus)){
+  abline(rq(y~x,tau=taus[i],data=df),col="gray")}
+abline(rq(y~x,tau=.5,data=df),col="blue")
+abline(lm(y~x,data=df),lty=2,col="red")#the dreaded ols line
+```
+
+\subsection{3. Quantile Model fit}
+
+Fitting the quantile model:
+
+$$
+Q_{y|x}(\tau) = \beta_{0,\tau} + \beta_{1,\tau} x
+$$
+
+with $\tau = 0.25$
+
+```{r}
+fit25 <- rq(y ~ x, tau = .25,data=df)
+summary(fit25,se="ker")
+```
+
+
+\subsection{4. Bias, Variance, MSE}
+
+
+Epanechnikov kernel is chosen to compute the standard error.
+
+\subsubsection{different $\beta$s}
+
+```{r}
+maxit = 1000 # number of iteration
+betas = seq.int(0, 5) # sequence of betas
+nb = length(betas) # number of betas
+
+# create df to store the results
+resultdf <- setNames(data.frame(matrix(ncol = 4, nrow = nb)), c("beta", "bias", "var", "mse")) 
+# initialize the df to store se for each beta's 1000 iteration results
+se <- setNames(data.frame(matrix(ncol = nb, nrow = maxit)), betas)
+bhat <- setNames(data.frame(matrix(ncol = nb, nrow = maxit)), betas)
+
+for (i in 1:nb){
+  beta = betas[i]
+  for (j in 1:maxit){
+    u = data.frame(u=rchisq(1:300, df=3))
+    x = data.frame(x=rchisq(1:300, df=6))
+    y = data.frame(y = (1+beta*x)*(u+3))
+    colnames(y) <- c('y')
+    df <- cbind(x,y)
+    fit25 <- rq(y ~ x, tau = .25,data=df)
+    se[j,i]  <- summary(fit25,se="ker")$coefficients[2,2]
+    bhat[j,i]<- summary(fit25,se="ker")$coefficients[2,1]
+  }
+  resultdf$beta[i] = beta
+  bias= sum(se[,i])/1000 - beta
+  resultdf$bias[i] = bias
+  var = var(se[,i])
+  resultdf$var[i] =var
+  resultdf$mse[i] = bias^2+var
+}
+```
+
+```{r}
+# For different beta in data generating process
+# Bias, Variance, MSE
+head(resultdf)
+# Computed standard error (ker)
+head(se)
+# Predicted \beta_{1,\tau}
+head(bhat)
+```
+
+\subsubsection{different taus}
+
+```{r}
+maxit = 1000 # number of iteration
+taus <- seq.int(0.1, 1, 0.1) # sequence of taus
+nb = length(taus) # number of taus
+beta = 0 # data generating process
+
+resultdf <- setNames(data.frame(matrix(ncol = 4, nrow = nb)), c("tau", "bias", "var", "mse"))
+# initialize the df to store se for each tau's 1000 iteration results
+bhat <- setNames(data.frame(matrix(ncol = nb, nrow = maxit)), taus)
+se <- setNames(data.frame(matrix(ncol = nb, nrow = maxit)), taus)
+
+for (i in 1:nb){
+  mytau = taus[i]
+  for (j in 1:maxit){
+    u = data.frame(u=rchisq(1:300, df=3))
+    x = data.frame(x=rchisq(1:300, df=6))
+    y = data.frame(y = (1+beta*x)*(u+3)) # beta is set to be 0 in this case
+    colnames(y) <- c('y')
+    df <- cbind(x,y)
+    fit <- rq(y ~ x, tau = mytau,data=df)
+    se[j,i]  <- summary(fit,se="ker")$coefficients[2,2]
+    bhat[j,i]<- summary(fit,se="ker")$coefficients[2,1]
+  }
+  resultdf$tau[i] = mytau
+  bias= sum(se[,i])/1000 - beta
+  resultdf$bias[i] = bias
+  var = var(se[,i])
+  resultdf$var[i] =var
+  resultdf$mse[i] = bias^2+var
+}
+```
+
+```{r}
+# For different taus
+# Bias, Variance, MSE
+head(resultdf)
+# Computed standard error (ker)
+head(se)
+# Predicted \beta_{1,\tau}
+head(bhat)
+```
+
+\subsection{Type II Error}
+
+\subsubsection{different taus}
+
+```{r}
+for (i in 1:nb){
+  print(sum(abs((bhat[,i]-beta)/se[,i])>1.96)/maxit)
+}
+```
+
+
+
+To be continued...
+QTM 385 - Homework 5
+
+
+
+
